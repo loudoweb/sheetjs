@@ -21,7 +21,22 @@ if "%1" == "help" (
 ) else if "%1" == "misc" (
 	SET FMTS=misc
 	mocha -R spec -t 30000
-) else if "%1" == "book" (
+) else if "%1" == "dist" (
+	echo dist
+	xcopy ".\LICENSE" ".\dist\LICENSE"
+	xcopy ".\node_modules\codepage\dist\cpexcel.full.js" ".\dist\cpexcel.js"
+	
+	SET LIB=xlsx
+	SET TARGET=%LIB%.js
+	echo %TARGET%
+	xcopy ".\%TARGET%" ".\dist\%TARGET%"
+	SET DISTHDR=misc/suppress_export.js
+	SET REQS=
+	SET AUXTARGETS=
+	SET ADDONS=dist/cpexcel.js
+	SET UGLIFYOPTS=--support-ie8 -m
+	npx uglifyjs %DISTHDR% %REQS% %ADDONS% dist/%TARGET% %AUXTARGETS% %UGLIFYOPTS% -o dist/%LIB%.full.min.js
+)else if "%1" == "book" (
 	type docbits\*.md > README.md
 	markdown-toc -i README.md
 ) else (
