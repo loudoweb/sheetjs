@@ -458,10 +458,6 @@ function datenum_local(v/*:Date*/, date1904/*:?boolean*/)/*:number*/ {
 	else if(v >= base1904) epoch += 24*60*60*1000;
 	return (epoch - (dnthresh + (v.getTimezoneOffset() - basedate.getTimezoneOffset()) * 60000)) / (24 * 60 * 60 * 1000);
 }
-/* The longest 32-bit integer text is "-4294967296", exactly 11 chars */
-function general_fmt_int(v/*:number*/)/*:string*/ { return v.toString(10); }
-SSF._general_int = general_fmt_int;
-
 /* ECMA-376 18.8.30 numFmt*/
 /* Note: `toPrecision` uses standard form when prec > E and E >= -6 */
 var general_fmt_num = (function make_general_fmt_num() {
@@ -514,6 +510,7 @@ SSF._general_num = general_fmt_num;
 	- "up to 11 characters" displayed for numbers
 	- Default date format (code 14) used for Dates
 
+	The longest 32-bit integer text is "-2147483648", exactly 11 chars
 	TODO: technically the display depends on the width of the cell
 */
 function general_fmt(v/*:any*/, opts/*:any*/) {
@@ -3358,7 +3355,24 @@ function cc2str(arr/*:Array<number>*/, debomit)/*:string*/ {
 		}
 		return arr.toString("binary");
 	}
-	/* TODO: investigate performance degradation of TextEncoder in Edge 13 */
+
+	if(typeof TextDecoder !== "undefined") try {
+		if(debomit) {
+			if(arr[0] == 0xFF && arr[1] == 0xFE) return new TextEncoder("utf-16le").decode(arr.slice(2));
+			if(arr[0] == 0xFE && arr[1] == 0xFF) return new TextEncoder("utf-16be").decode(arr.slice(2));
+		}
+		var rev = {
+			"\u20ac": "\x80", "\u201a": "\x82", "\u0192": "\x83", "\u201e": "\x84",
+			"\u2026": "\x85", "\u2020": "\x86", "\u2021": "\x87", "\u02c6": "\x88",
+			"\u2030": "\x89", "\u0160": "\x8a", "\u2039": "\x8b", "\u0152": "\x8c",
+			"\u017d": "\x8e", "\u2018": "\x91", "\u2019": "\x92", "\u201c": "\x93",
+			"\u201d": "\x94", "\u2022": "\x95", "\u2013": "\x96", "\u2014": "\x97",
+			"\u02dc": "\x98", "\u2122": "\x99", "\u0161": "\x9a", "\u203a": "\x9b",
+			"\u0153": "\x9c", "\u017e": "\x9e", "\u0178": "\x9f"
+		};
+		return new TextDecoder("latin1").decode(arr).replace(/[€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]/g, function(c) { return rev[c] || c; });
+	} catch(e) {}
+
 	var o = [];
 	for(var i = 0; i != arr.length; ++i) o.push(String.fromCharCode(arr[i]));
 	return o.join("");
@@ -14530,12 +14544,12 @@ function safe_format(p/*:Cell*/, fmtid/*:number*/, fillid/*:?number*/, opts, the
 		if(p.t === 'e') p.w = p.w || BErr[p.v];
 		else if(fmtid === 0) {
 			if(p.t === 'n') {
-				if((p.v|0) === p.v) p.w = SSF._general_int(p.v);
+				if((p.v|0) === p.v) p.w = p.v.toString(10);
 				else p.w = SSF._general_num(p.v);
 			}
 			else if(p.t === 'd') {
 				var dd = datenum(p.v);
-				if((dd|0) === dd) p.w = SSF._general_int(dd);
+				if((dd|0) === dd) p.w = dd.toString(10);
 				else p.w = SSF._general_num(dd);
 			}
 			else if(p.v === undefined) return "";
@@ -17242,7 +17256,7 @@ function safe_format_xlml(cell/*:Cell*/, nf, o) {
 		if(cell.t === 'e') { cell.w = cell.w || BErr[cell.v]; }
 		else if(nf === "General") {
 			if(cell.t === 'n') {
-				if((cell.v|0) === cell.v) cell.w = SSF._general_int(cell.v);
+				if((cell.v|0) === cell.v) cell.w = cell.v.toString(10);
 				else cell.w = SSF._general_num(cell.v);
 			}
 			else cell.w = SSF._general(cell.v);
@@ -18480,7 +18494,7 @@ function safe_format_xf(p/*:any*/, opts/*:ParseOpts*/, date1904/*:?boolean*/) {
 		if(p.t === 'e') { p.w = p.w || BErr[p.v]; }
 		else if(fmtid === 0 || fmtid == "General") {
 			if(p.t === 'n') {
-				if((p.v|0) === p.v) p.w = SSF._general_int(p.v);
+				if((p.v|0) === p.v) p.w = p.v.toString(10);
 				else p.w = SSF._general_num(p.v);
 			}
 			else p.w = SSF._general(p.v);

@@ -434,10 +434,6 @@ function datenum_local(v, date1904) {
 	else if(v >= base1904) epoch += 24*60*60*1000;
 	return (epoch - (dnthresh + (v.getTimezoneOffset() - basedate.getTimezoneOffset()) * 60000)) / (24 * 60 * 60 * 1000);
 }
-/* The longest 32-bit integer text is "-4294967296", exactly 11 chars */
-function general_fmt_int(v) { return v.toString(10); }
-SSF._general_int = general_fmt_int;
-
 /* ECMA-376 18.8.30 numFmt*/
 /* Note: `toPrecision` uses standard form when prec > E and E >= -6 */
 var general_fmt_num = (function make_general_fmt_num() {
@@ -490,6 +486,7 @@ SSF._general_num = general_fmt_num;
 	- "up to 11 characters" displayed for numbers
 	- Default date format (code 14) used for Dates
 
+	The longest 32-bit integer text is "-2147483648", exactly 11 chars
 	TODO: technically the display depends on the width of the cell
 */
 function general_fmt(v, opts) {
@@ -3278,7 +3275,24 @@ function cc2str(arr, debomit) {
 		}
 		return arr.toString("binary");
 	}
-	/* TODO: investigate performance degradation of TextEncoder in Edge 13 */
+
+	if(typeof TextDecoder !== "undefined") try {
+		if(debomit) {
+			if(arr[0] == 0xFF && arr[1] == 0xFE) return new TextEncoder("utf-16le").decode(arr.slice(2));
+			if(arr[0] == 0xFE && arr[1] == 0xFF) return new TextEncoder("utf-16be").decode(arr.slice(2));
+		}
+		var rev = {
+			"\u20ac": "\x80", "\u201a": "\x82", "\u0192": "\x83", "\u201e": "\x84",
+			"\u2026": "\x85", "\u2020": "\x86", "\u2021": "\x87", "\u02c6": "\x88",
+			"\u2030": "\x89", "\u0160": "\x8a", "\u2039": "\x8b", "\u0152": "\x8c",
+			"\u017d": "\x8e", "\u2018": "\x91", "\u2019": "\x92", "\u201c": "\x93",
+			"\u201d": "\x94", "\u2022": "\x95", "\u2013": "\x96", "\u2014": "\x97",
+			"\u02dc": "\x98", "\u2122": "\x99", "\u0161": "\x9a", "\u203a": "\x9b",
+			"\u0153": "\x9c", "\u017e": "\x9e", "\u0178": "\x9f"
+		};
+		return new TextDecoder("latin1").decode(arr).replace(/[€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]/g, function(c) { return rev[c] || c; });
+	} catch(e) {}
+
 	var o = [];
 	for(var i = 0; i != arr.length; ++i) o.push(String.fromCharCode(arr[i]));
 	return o.join("");
@@ -10311,6 +10325,7 @@ function parse_fonts(t, styles, themes, opts) {
 			}
 		}
 	});
+	console.log(styles.Fonts);
 }
 
 /* 18.8.31 numFmts CT_NumFmts */
@@ -14419,6 +14434,31 @@ function get_cell_style(styles, cell, opts) {
 	return len;
 }
 
+function get_cell_style_csf(cellXf, styles) {
+
+  if (cellXf) {
+    var s = {}
+
+    if (typeof cellXf.numFmtId != undefined)  {
+      s.numFmt = SSF._table[cellXf.numFmtId];
+    }
+
+    if(cellXf.fillId)  {
+      s.fill =  styles.Fills[cellXf.fillId];
+    }
+	console.log(cellXf.fontId);
+    if (cellXf.fontId) {
+      s.font = styles.Fonts[cellXf.fontId];
+    }
+    if (cellXf.borderId) {
+//      s.border = styles.Borders[cellXf.borderId];
+    }
+
+    return s;
+  }
+  return null;
+}
+
 function safe_format(p, fmtid, fillid, opts, themes, styles) {
 	try {
 		if(opts.cellNF) p.z = SSF._table[fmtid];
@@ -14430,12 +14470,12 @@ function safe_format(p, fmtid, fillid, opts, themes, styles) {
 		if(p.t === 'e') p.w = p.w || BErr[p.v];
 		else if(fmtid === 0) {
 			if(p.t === 'n') {
-				if((p.v|0) === p.v) p.w = SSF._general_int(p.v);
+				if((p.v|0) === p.v) p.w = p.v.toString(10);
 				else p.w = SSF._general_num(p.v);
 			}
 			else if(p.t === 'd') {
 				var dd = datenum(p.v);
-				if((dd|0) === dd) p.w = SSF._general_int(dd);
+				if((dd|0) === dd) p.w = dd.toString(10);
 				else p.w = SSF._general_num(dd);
 			}
 			else if(p.v === undefined) return "";
@@ -14445,7 +14485,7 @@ function safe_format(p, fmtid, fillid, opts, themes, styles) {
 		else p.w = SSF.format(fmtid,p.v,_ssfopts);
 	} catch(e) { if(opts.WTF) throw e; }
 	if(!opts.cellStyles) return;
-	if(fillid != null) try {
+	/*if(fillid != null) try {
 		p.s = styles.Fills[fillid];
 		if (p.s.fgColor && p.s.fgColor.theme && !p.s.fgColor.rgb) {
 			p.s.fgColor.rgb = rgb_tint(themes.themeElements.clrScheme[p.s.fgColor.theme].rgb, p.s.fgColor.tint || 0);
@@ -14455,7 +14495,7 @@ function safe_format(p, fmtid, fillid, opts, themes, styles) {
 			p.s.bgColor.rgb = rgb_tint(themes.themeElements.clrScheme[p.s.bgColor.theme].rgb, p.s.bgColor.tint || 0);
 			if(opts.WTF) p.s.bgColor.raw_rgb = themes.themeElements.clrScheme[p.s.bgColor.theme].rgb;
 		}
-	} catch(e) { if(opts.WTF && styles.Fills) throw e; }
+	} catch(e) { if(opts.WTF && styles.Fills) throw e; }*/
 }
 
 function check_ws(ws, sname, i) {
@@ -14934,6 +14974,7 @@ return function parse_ws_xml_data(sdata, s, opts, guess, themes, styles) {
 			cf = null;
 			if(do_format && tag.s !== undefined) {
 				cf = styles.CellXf[tag.s];
+				if (opts.cellStyles) p.s = get_cell_style_csf(cf, styles);
 				if(cf != null) {
 					if(cf.numFmtId != null) fmtid = cf.numFmtId;
 					if(opts.cellStyles) {
@@ -17137,7 +17178,7 @@ function safe_format_xlml(cell, nf, o) {
 		if(cell.t === 'e') { cell.w = cell.w || BErr[cell.v]; }
 		else if(nf === "General") {
 			if(cell.t === 'n') {
-				if((cell.v|0) === cell.v) cell.w = SSF._general_int(cell.v);
+				if((cell.v|0) === cell.v) cell.w = cell.v.toString(10);
 				else cell.w = SSF._general_num(cell.v);
 			}
 			else cell.w = SSF._general(cell.v);
@@ -18368,7 +18409,7 @@ function safe_format_xf(p, opts, date1904) {
 		if(p.t === 'e') { p.w = p.w || BErr[p.v]; }
 		else if(fmtid === 0 || fmtid == "General") {
 			if(p.t === 'n') {
-				if((p.v|0) === p.v) p.w = SSF._general_int(p.v);
+				if((p.v|0) === p.v) p.w = p.v.toString(10);
 				else p.w = SSF._general_num(p.v);
 			}
 			else p.w = SSF._general(p.v);
@@ -22735,6 +22776,7 @@ function parse_zip(zip, opts) {
 		if(opts.cellStyles && dir.themes.length) themes = parse_theme(getzipstr(zip, dir.themes[0].replace(/^\//,''), true)||"",dir.themes[0], opts);
 
 		if(dir.style) styles = parse_sty(getzipdata(zip, strip_front_slash(dir.style)), dir.style, themes, opts);
+		console.log(styles);
 	}
 
 	/*var externbooks = */dir.links.map(function(link) {
